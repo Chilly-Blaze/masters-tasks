@@ -4,6 +4,7 @@ from copy import copy
 import json
 import datetime
 import os
+import sys
 
 # 函数部分
 # --------------------------------------------
@@ -48,7 +49,7 @@ def Diff(ds):
 
 # 列出指定内容
 def ListT(tas, f=True):
-    os.system("clear")
+    os.system(CLEAR)
     c = 0
     for i in tas:
 
@@ -86,7 +87,7 @@ def ListT(tas, f=True):
 
 # 列出历史
 def ListH(his, f=""):
-    os.system("clear")
+    os.system(CLEAR)
     c = 0
 
     for i in his:
@@ -154,8 +155,12 @@ dp = 1
 PATH = "./conf.json"
 DIVID = "-"*30
 HELP = "./help.txt"
+if (sys.platform == "linux"):
+    CLEAR = "clear"
+else:
+    CLEAR = "cls"
 info = {}
-os.system("clear")
+os.system(CLEAR)
 
 # 初始化
 if (not(os.path.isfile(PATH))):
@@ -190,10 +195,10 @@ while True:
     if (com == "q"):
         break
     if (com == "c"):
-        os.system("clear")
+        os.system(CLEAR)
         continue
     if (com == "help"):
-        os.system("clear")
+        os.system(CLEAR)
         print(open(HELP).read())
         continue
 
