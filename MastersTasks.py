@@ -1,310 +1,464 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from copy import copy
-import json
-import datetime
 import os
 import sys
+import datetime
+from typing import List, Tuple
+import uuid
+import json
+import language
+import requests
+from copy import deepcopy
 
-# 函数部分
-# --------------------------------------------
+# 全局常量
+defaultConf = 'conf.json'
+defaultHelp = 'help.txt'
+mode = ['t', 'h', 's']
+sync = ['u', 'd', 'r', 'i']
+resposive = ['', 'q', '?', 'j', 'n', 'f'] + mode + list(
+    language.language.keys()) + sync
+line = '─' * 50
+taskMax = 0
+historyMax = 20
+serverPort = 8000
+hiddenMax = 0
+
+
+# 存储类
+# ------
+class Task:
+
+    def __init__(self, name='', color=0, repeat=False):
+        self.name = name
+        self.repeat = repeat
+        self.color = color
+        self.count = 0
+        self.createTime = int(datetime.datetime.now().timestamp())
+
+    def isContain(self, s: str):
+        return s in self.name
+
+
+class Hidden(Task):
+
+    def __init__(self, name='', color=0):
+        super().__init__(name, color)
+
+
+class History:
+
+    def __init__(self, t=Task()):
+        self.task = t
+        self.doneTime = int(datetime.datetime.now().timestamp())
+        self.duringTime = self.doneTime - t.createTime
+
+    def isContain(self, s: str):
+        return s in self.task.name
+
+
+class Synchronizer:
+
+    def __init__(self, ip='', token=''):
+        self.ip = ip
+        self.port = serverPort
+        self.token = token
+
+    def isActive(self):
+        return self.ip != ''
+
+    def request(self, route, f, json=None):
+        return f(f'http://{self.ip}:{self.port}/{route}',
+                 headers={'token': self.token},
+                 json=json)
+
+    def dealSync(self, c: str):
+        if (c == sync[2]):
+            config.synchronizer.reset()
+        elif (c == sync[3]):
+            print(lang['fhint'][14].format(
+                config.id,
+                self.token if self.token != '' else lang['ehint'][4]))
+        elif not (self.isActive()):
+            if (input(lang['fhint'][0]).lower() == 'n'):
+                return
+            else:
+                self.reset()
+        elif (c == sync[0]):
+            config.synchronizer.upload()
+        else:
+            config.synchronizer.download()
+
+    def isok(self, resp: requests.Response):
+        if not (resp.json()['ok']):
+            raise Exception(resp.json()['err'])
+        return resp.json()
+
+    def ping(self):
+        print(lang['fhint'][2])
+        try:
+            self.isok(self.request('ping', requests.get))
+        except Exception as e:
+            print(lang['fhint'][4].format(self.ip, self.token))
+            print(lang['err'][2].format(e))
+            return False
+        else:
+            print(lang['fhint'][3])
+            return True
+
+    def upload(self):
+        if (self.ping()):
+            if (input(lang['fhint'][5]) == 'n'):
+                return
+            print(lang['fhint'][6])
+            try:
+                body = {'id': config.id, 'data': obj2json(config)}
+                self.isok(self.request('upload', requests.post, body))
+            except Exception as e:
+                print(lang['fhint'][8].format(e))
+                print(lang['err'][2].format(e))
+            else:
+                print(lang['fhint'][7])
+
+    def download(self):
+        if (self.ping()):
+            com = input(lang['fhint'][9])
+            if (com == 'q'):
+                return
+            elif (com == '2'):
+                id = input(lang['fhint'][10])
+            else:
+                id = config.id
+            try:
+                dic = json.loads(
+                    self.isok(self.request(f'download/{id}',
+                                           requests.post))['data'])
+                if (com == '2'):
+                    path = j(f'{id}.json')
+                    with open(path, 'w') as f:
+                        f.write(json.dumps(dic))
+                    print(lang['fhint'][13].format(path))
+                else:
+                    json2obj(dic, config)
+                    print(lang['fhint'][12])
+            except Exception as e:
+                print(lang['fhint'][11].format(id))
+                print(lang['err'][2].format(e))
+
+    def reset(self):
+        self.ip = input(lang['fhint'][1].format('ip'))
+        self.token = input(lang['fhint'][1].format('token'))
+        self.ping()
+
+
+class Config:
+
+    def __init__(self):
+        self.id = str(uuid.uuid4())
+        self.name = self.id
+        self.gtime = int(datetime.datetime.now().timestamp())
+        self.lang = ''
+        self.synchronizer = Synchronizer()
+        self.mode = mode[0]
+        self.task: List[Task] = []
+        self.hidden: List[Hidden] = []
+        self.history: List[History] = []
+
+    # Getter
+    def getModeElement(self):
+        if (self.mode == mode[0]):
+            return 0, self.task, self.dealNormal, self.normalShow
+        if (self.mode == mode[1]):
+            return 1, self.history, self.dealHistory, self.historyShow
+        return 2, self.hidden, self.dealHidden, self.hiddenShow
+
+    # 过滤器Getter，返回元组
+    def getFilterElement(self, s: str):
+        raw = l2t(self.getModeElement()[1])
+        return [i for i in raw if i[1].isContain(s)]
+
+    # 任务处理
+    def dealNormal(self, task: Task, para: List[str]):
+        if ('d' not in para):
+            self.history.append(History(task))
+            if (task.repeat):
+                task.count += 1
+                task.createTime = int(datetime.datetime.now().timestamp())
+                self.task.append(task)
+        if ('h' in para):
+            self.hidden.append(Hidden(task.name, task.color))
+
+    def dealHistory(self, task: History, para: List[str]):
+        if ('r' in para):
+            self.history.append(task)
+            task.task.createTime = int(datetime.datetime.now().timestamp())
+            self.task.append(task.task)
+
+    def dealHidden(self, task: Hidden, para: List[str]):
+        if ('d' not in para):
+            self.task.append(Task(task.name, task.color, 'r' in para))
+
+    # 任务展示
+    def normalShow(self, task: List[Tuple]):
+        for idx, i in task[-taskMax:]:
+            print(
+                colorChar(
+                    lang['tformat'][0].format(
+                        idx + 1, i.name, '' if not i.repeat else
+                        lang['aformat'][0].format(i.count)), i.color))
+
+    def historyShow(self, history: List[Tuple]):
+        f = datetime.datetime.fromtimestamp
+        for idx, i in history[-historyMax:]:
+            print(
+                colorChar(
+                    lang['tformat'][1].format(
+                        idx + 1, f(i.doneTime),
+                        lang['aformat'][1].format(i.task.count)
+                        if i.task.repeat else '', i.task.name,
+                        diff(i.duringTime)), i.task.color))
+
+    def hiddenShow(self, hidden: List[Tuple]):
+        for idx, i in hidden[-hiddenMax:]:
+            print(
+                colorChar(lang['tformat'][0].format(idx + 1, i.name, ''),
+                          i.color))
+
+    # 任务生成
+    def generateTask(self, com: str, para: List[str]):
+        color = int(next((i for i in para if i.isdigit()), '0'))
+        if ('h' in para):
+            self.hidden.append(Hidden(com, color))
+        else:
+            self.task.append(Task(com, color, 'r' in para))
+
+
+# 工具函数
+# ------
+# 清屏
+def clear():
+    os.system('clear' if sys.platform == 'linux' else 'cls')
+
+
+# 等待回车
+def enter():
+    input(lang['chint'][3])
+
+
+# 程序执行路径
+def j(s: str):
+    return os.path.join(sys.path[0], s)
+
+
+# 列表转元组
+def l2t(li: List):
+    return [(idx, i) for idx, i in enumerate(li)]
 
 
 # 参变分离
-def Sepa(com):
-    para = {}
-    f = ""
-    # 不存在参数
-    if (com.find(" -") == -1):
-        return com, para
-    com = com.split()
-    # 提取到字典
-    for p in com[1:]:
-        if (p[0] == '-'):
-            para[p] = ""
-            f = p
-        else:
-            para[f] = p
-    return com[0], para
+def sep(origin: str):
+    if (origin.find(' -') == -1):
+        return origin, []
+    para = [
+        i for i in list(origin[origin.find(' -') + 2:])
+        if i != '-' and i != ' '
+    ]
+    return origin[:origin.find(' -')], para
 
 
-# 计算时间差，并格式化输出
-def Diff(ds):
+# 彩色字符
+def colorChar(s: str, f: int):
+    return '\033[3{}m{}\033[0m'.format(f, s)
+
+
+# 时间显示转换
+def diff(ds: int):
     f = False
     st = ""
-    if (ds // (60*60*24) != 0):
-        st += str(ds // (60*60*24))+"天"
+    la = lang['time']
+    if (ds // (60 * 60 * 24) != 0):
+        st += str(ds // (60 * 60 * 24)) + la[0]
         f = True
-    ds %= 3600*24
-    if (ds // (60*60) != 0 or f):
-        st += str(ds // (60*60))+"小时"
+    ds %= 3600 * 24
+    if (ds // (60 * 60) != 0 or f):
+        st += str(ds // (60 * 60)) + la[1]
         f = True
-    ds %= 60*24
+    ds %= 60 * 24
     if (ds // 60 != 0 or f):
-        st += str(ds // 60)+"分钟"
+        st += str(ds // 60) + la[2]
         f = True
-    st += str(ds % 60)+"秒"
+    st += str(ds % 60) + la[3]
     return st
 
 
-# 列出指定内容
-def ListT(tas, f=True):
-    os.system(CLEAR)
-    c = 0
-    for i in tas:
+# json转对象
+def json2obj(j, o):
+    if (isinstance(j, list)):
+        return [json2obj(i, deepcopy(o)) for i in j]
+    if not (isinstance(j, dict)):
+        return j
+    d = {
+        k: (json2obj(v,
+                     globals()[k.capitalize()]()) if isinstance(
+                         v, (dict, list)) else json2obj(v, object()))
+        for k, v in j.items()
+    }
+    o.__dict__.update(d)
+    return o
 
-        # 分割线
-        if (i == DIVID):
-            if (c != 0):
-                print(i)
-            continue
-        c += 1
-        s = ""
 
-        # 判断标签
-        if (i["tag"] != ""):
-            s += " Ps: " + i["tag"]
-        # 判断任务类型
-        if (i.get("repeat") != None and i.get("repeat") != 0):
-            s += " (已完成:" + str(i["repeat"]) + "次)"
+# 对象转json
+def obj2json(o: object):
+    return json.dumps(o, default=lambda x: x.__dict__, ensure_ascii=False)
 
-        print(str(c) + " " + i["value"] + s)
-    global dp
-    dp = 1
 
-    # 提示信息
-    if (c == 0 and f):
-        print("当前的任务已经全部完成啦~")
-    elif (c == 0 and not(f)):
-        print("当前没有隐藏任务~")
-    elif (c != 0 and f):
-        print("可以输入记录编号表示完成目标任务")
+# 过程函数
+# ------
+# 切换任务配置
+def switchConfigration():
+    global config, configPath
+    fileList = [i for i in os.listdir(sys.path[0]) if i.endswith('.json')]
+    for idx, i in enumerate(fileList):
+        f = j(i) == configPath
+        print(lang['tformat'][0].format(idx + 1, i, '') +
+              colorChar(' <' if f else '', 1))
+    cmd = input(lang['chint'][4].format('/'.join(
+        str(i + 1) for i in range(len(fileList))) + '/q'))
+    if (cmd == 'q'):
+        return
+    if (not cmd.isdigit() or int(cmd) > len(fileList)):
+        print(lang['err'][0])
     else:
-        dp = 3
-        print("可以输入任务编号将其添加到任务列表")
-    print(DIVID)
+        path = j(fileList[int(cmd) - 1])
+        try:
+            c = Config()
+            with open(path, 'r') as f:
+                json2obj(json.loads(f.read()), c)
+            config = c
+            configPath = path
+            print(lang['chint'][5])
+        except Exception:
+            print(lang['err'][1].format(path))
 
 
-# 列出历史
-def ListH(his, f=""):
-    os.system(CLEAR)
-    c = 0
+# 设置默认任务配置
+def setDefault():
+    global configPath
+    with open(j(defaultConf), 'r') as f:
+        id = json.loads(f.read())['id']
+    if (j(defaultConf) != configPath):
+        os.rename(j(defaultConf), j(f'{id}.json'))
+        os.rename(configPath, j(defaultConf))
+        configPath = j(defaultConf)
+    print(lang['chint'][7])
 
-    for i in his:
-        c += 1
-        s = ""
-        if (i["value"].find(f) == -1):
-            continue
-        value = i["value"]
 
-        # 判断标签
-        if (i.get("tag") != ""):
-            value += "(" + i["tag"] + ")"
+# 输入控制
+def untaskDeal(com: str):
+    global config, lang
+    clear()
+    if (com == resposive[1]):
+        sys.exit()
+    if (com == resposive[2]):
+        with open(helpPath, 'r') as f:
+            print(f.read())
+    if (com == resposive[3]):
+        switchConfigration()
+    if (com == resposive[4]):
+        config.name = input(lang['chint'][6].format(config.name))
+    if (com == resposive[5]):
+        setDefault()
+    if (com in sync):
+        config.synchronizer.dealSync(com)
+    if (com not in (list(language.language.keys()) + mode) and com != ''):
+        enter()
+    if (com in language.language):
+        config.lang, lang = com, language.language[com]
+    if (com in mode):
+        config.mode = com
 
-        # 重复任务移除
-        if (i["type"] == 'd'):
-            s = "删除了重复任务 " + value + " ,一共完成了" + str(i["repeat"]) + "次"
-        # 重复任务
-        elif (i["type"] == 'rt'):
-            s = "完成了任务 " + value + " ,距上一次完成用了" + \
-                Diff(i["doneTime"]-i["lastTime"])
-        # 普通任务
-        elif (i["type"] == 't'):
-            s = "完成了任务 " + value + " ,花费了" + Diff(i["doneTime"]-i["creatTime"])
 
-        # 格式化输出
-        d = datetime.datetime.fromtimestamp(i["doneTime"])
-        print(str(c) + " 您于" + str(d) + s)
-
-    # 环境及格式化输出
-    global dp
-    dp = 2
-    if (c == 0):
-        print("还没有完成过任务呢~")
+# 指令处理
+def deal(com: str, para: List[str], elements: List, f):
+    if ('f' not in para):
+        if (com in resposive):
+            # 全局控制
+            untaskDeal(com)
+            elements = config.getModeElement()[1]
+        elif (com.isdigit()):
+            # 任务完成和删除
+            if (int(com) > len(elements)):
+                print(colorChar(lang['err'][0], 1))
+                enter()
+            else:
+                f(elements.pop(int(com) - 1), para)
+        else:
+            # 任务新增
+            config.generateTask(com, para)
+            elements = config.getModeElement()[1]
+        elements = l2t(elements)
     else:
-        print("可以输入记录编号删除目标记录")
-    print(DIVID)
+        # 任务查找
+        elements = config.getFilterElement(com)
+    return elements
 
 
-# 生成任务条目
-def GenerateT(target, tag, rep=False):
-    dic = {}
-    dic["creatTime"] = int(datetime.datetime.now().timestamp())
-    dic["value"] = target
-    dic["tag"] = tag
-    # 判断重复任务
-    if (rep):
-        dic["repeat"] = 0
-        dic["lastTime"] = dic["creatTime"]
-    return dic
+# 界面显示
+def display(s: str, elements: List):
+    clear()
+    modeElement = config.getModeElement()
+    print(lang['dname'][modeElement[0]] + f' ({config.name})')
+    print(line)
+    if (modeElement[1] == []):
+        print(lang['ehint'][modeElement[0]])
+    elif (elements == []):
+        print(lang['ehint'][3].format(colorChar(s, 1)))
+    else:
+        modeElement[3](elements)
+    print(line)
 
 
-# 生成历史条目
-def GenerateH(target, type):
-    dic = target.copy()
-    dic["doneTime"] = int(datetime.datetime.now().timestamp())
-    dic["type"] = type
-    return dic
+# 逻辑函数
+# ------
+# 挂载配置文件
+def initialization():
+    config = Config()
+    try:
+        with open(configPath, 'r') as f:
+            json2obj(json.loads(f.read()), config)
+    except Exception:
+        la = input(language.langChoose)
+        config.lang = la if la in language.language else 'zh'
+        lang = language.language[config.lang]
+        print(lang['chint'][0])
+        with open(configPath, 'w') as f:
+            f.write(obj2json(config))
+        print(lang['chint'][1])
+        print(lang['chint'][3])
+    return config
 
-
-# 主程序
-# ---------------------------------------
-
-# 全局变量
-dp = 1
-PATH = "./conf.json"
-DIVID = "-"*30
-HELP = "./help.txt"
-if (sys.platform == "linux"):
-    CLEAR = "clear"
-else:
-    CLEAR = "cls"
-info = {}
-os.system(CLEAR)
-
-# 初始化
-if (not(os.path.isfile(PATH))):
-    print("检测到本目录下不存在配置文件，正在创建...")
-    file = open(PATH, 'w')
-    info["CreatTime"] = int(datetime.datetime.now().timestamp())
-    info["Task"] = {}
-    info["Task"]["Current"] = []
-    info["Task"]["Hide"] = []
-    info["Task"]["Repeat"] = []
-    info["History"] = []
-    file.write(json.dumps(info))
-    file.close()
-    print("创建成功，如需帮助请输入 help 并按回车查看帮助")
-else:
-    t = json.loads(open(PATH).read())["Task"]
-    ListT(t["Repeat"]+[DIVID, ]+t["Current"])
 
 # 主循环
-while True:
+def main():
+    display('', l2t(config.getModeElement()[1]))
+    while 1:
+        # 获取输入
+        com, para = sep(input(lang['chint'][2]))
+        # 获取实体
+        elements, dealF = config.getModeElement()[1:-1]
+        # 指令处理
+        elements = deal(com, para, elements, dealF)
+        # 界面显示
+        display(com, elements)
+        # 保存
+        with open(configPath, 'w') as f:
+            f.write(obj2json(config))
 
-    # 参变分离
-    try:
-        com, para = Sepa(input("当前操作: "))
-    except Exception as e:
-        print(e)
-        continue
 
-    # 响应即时性指令
-    if (com == ""):
-        continue
-    if (com == "q"):
-        break
-    if (com == "c"):
-        os.system(CLEAR)
-        continue
-    if (com == "help"):
-        os.system(CLEAR)
-        print(open(HELP).read())
-        continue
-
-    # 获取文件中的内容
-    info = json.loads(open(PATH).read())
-    current = list(info["Task"]["Current"])
-    hide = list(info["Task"]["Hide"])
-    repeat = list(info["Task"]["Repeat"])
-    history = list(info["History"])
-
-    # 直接列出内容相关
-    if (com == "h"):
-        if (para.get("-f") != None):
-            ListH(history, para["-f"])
-        else:
-            ListH(history)
-    elif (com == "l"):
-        if (para.get("-h") == None):
-            ListT(repeat + [DIVID, ] + current)
-        else:
-            ListT(hide, False)
-
-    # 对指定条目操作
-    elif (com[0] > '0' and com[0] <= '9'):
-        # 完成任务
-        if (dp == 1):
-            try:
-                num = int(com)
-            except ValueError:
-                print("任务不应该以数字开头")
-            except Exception as e:
-                print("奇怪的异常: e")
-            else:
-                # 重复任务相关
-                if (len(repeat) >= num):
-                    doneT = repeat[num-1]
-                    if (para.get('-r') != None or para.get('-d') != None):
-                        if (para.get('-d') == None):
-                            history.append(GenerateH(doneT, "d"))
-                        repeat.remove(doneT)
-                    else:
-                        history.append(GenerateH(doneT, "rt"))
-                        doneT["repeat"] += 1
-                        doneT["lastTime"] = int(
-                            datetime.datetime.now().timestamp())
-                    ListT(repeat + [DIVID, ] + current)
-                # 普通任务相关
-                elif (len(current)+len(repeat) >= num):
-                    doneT = current[num - len(repeat) - 1]
-                    if (para.get('-d') == None):
-                        history.append(GenerateH(doneT, "t"))
-                    current.remove(doneT)
-                    ListT(repeat + [DIVID, ] + current)
-                else:
-                    print("指定完成的任务序号不存在于表中")
-        # 移除历史记录
-        if (dp == 2):
-            try:
-                delH = history[int(com)-1]
-            except IndexError:
-                print("不存在该历史记录需要删除")
-            except ValueError:
-                print("错误的删除指令")
-            except Exception as e:
-                print("奇怪的异常: e")
-            else:
-                history.remove(delH)
-                ListH(history)
-        # 添加隐藏任务至任务列表
-        if (dp == 3):
-            try:
-                addH = hide[int(com)-1]
-            except IndexError:
-                print("不存在该隐藏内容")
-            except ValueError:
-                print("错误的指令")
-            except Exception as e:
-                print("奇怪的异常: e")
-            else:
-                if (para.get("-r") != None and para.get("-d") == None):
-                    repeat.append(GenerateT(addH["value"], addH["tag"], True))
-                elif (para.get("-d") == None):
-                    current.append(GenerateT(addH["value"], addH["tag"]))
-                hide.remove(addH)
-                ListT(repeat + [DIVID, ] + current)
-
-    # 添加任务
-    else:
-        # 判断标签
-        if (para.get("-t") == None):
-            tag = ""
-        else:
-            tag = para['-t']
-
-        # 选择添加列表
-        if (para.get("-h") != None):
-            hide.append({"value": com, "tag": tag})
-        elif (para.get("-r") != None):
-            repeat.append(GenerateT(com, tag, True))
-        else:
-            current.append(GenerateT(com, tag))
-        ListT(repeat + [DIVID, ] + current)
-
-    # 转存到文件
-    info["Task"]["Current"] = current
-    info["Task"]["Hide"] = hide
-    info["Task"]["Repeat"] = repeat
-    info["History"] = history
-    open(PATH, 'w').write(json.dumps(info, ensure_ascii=False))
+clear()
+# 全局变量
+configPath = j(defaultConf)
+helpPath = j(defaultHelp)
+config = initialization()
+lang = language.language[config.lang]
+# 主循环
+main()

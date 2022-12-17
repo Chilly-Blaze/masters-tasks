@@ -1,4 +1,6 @@
 test.py
 __pycache__/
 .vscode/
-conf.json
+*.json
+static/*
+token/*
