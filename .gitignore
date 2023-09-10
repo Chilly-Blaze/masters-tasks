@@ -1,6 +1,5 @@
 test.py
 __pycache__/
-.vscode/
 *.json
 static/*
 token/*

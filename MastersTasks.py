@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 import os
 import sys
@@ -15,8 +15,7 @@ defaultConf = 'conf.json'
 defaultHelp = 'help.txt'
 mode = ['t', 'h', 's']
 sync = ['u', 'd', 'r', 'i']
-resposive = ['', 'q', '?', 'j', 'n', 'f'] + mode + list(
-    language.language.keys()) + sync
+resposive = ['', 'q', '?', 'j', 'n', 'f'] + mode + list(language.language.keys()) + sync
 line = '─' * 50
 taskMax = 0
 historyMax = 20
@@ -26,23 +25,23 @@ hiddenMax = 0
 
 # 存储类
 # ------
-class Task:
+class Hidden:
 
-    def __init__(self, name='', color=0, repeat=False):
+    def __init__(self, name='', color=0):
         self.name = name
-        self.repeat = repeat
         self.color = color
-        self.count = 0
-        self.createTime = int(datetime.datetime.now().timestamp())
 
     def isContain(self, s: str):
         return s in self.name
 
 
-class Hidden(Task):
+class Task(Hidden):
 
-    def __init__(self, name='', color=0):
+    def __init__(self, name='', color=0, repeat=False):
         super().__init__(name, color)
+        self.repeat = repeat
+        self.count = 0
+        self.createTime = int(datetime.datetime.now().timestamp())
 
 
 class History:
@@ -67,23 +66,27 @@ class Synchronizer:
         return self.ip != ''
 
     def request(self, route, f, json=None):
-        return f(f'http://{self.ip}:{self.port}/{route}',
-                 headers={'token': self.token},
-                 json=json)
+        return f(
+            f'http://{self.ip}:{self.port}/{route}',
+            headers={'token': self.token},
+            json=json,
+        )
 
     def dealSync(self, c: str):
-        if (c == sync[2]):
+        if c == sync[2]:
             config.synchronizer.reset()
-        elif (c == sync[3]):
-            print(lang['fhint'][14].format(
-                config.id,
-                self.token if self.token != '' else lang['ehint'][4]))
+        elif c == sync[3]:
+            print(
+                lang['fhint'][14].format(
+                    config.id, self.token if self.token != '' else lang['ehint'][4]
+                )
+            )
         elif not (self.isActive()):
-            if (input(lang['fhint'][0]).lower() == 'n'):
+            if input(lang['fhint'][0]).lower() == 'n':
                 return
             else:
                 self.reset()
-        elif (c == sync[0]):
+        elif c == sync[0]:
             config.synchronizer.upload()
         else:
             config.synchronizer.download()
@@ -106,8 +109,8 @@ class Synchronizer:
             return True
 
     def upload(self):
-        if (self.ping()):
-            if (input(lang['fhint'][5]) == 'n'):
+        if self.ping():
+            if input(lang['fhint'][5]) == 'n':
                 return
             print(lang['fhint'][6])
             try:
@@ -120,19 +123,19 @@ class Synchronizer:
                 print(lang['fhint'][7])
 
     def download(self):
-        if (self.ping()):
+        if self.ping():
             com = input(lang['fhint'][9])
-            if (com == 'q'):
+            if com == 'q':
                 return
-            elif (com == '2'):
+            elif com == '2':
                 id = input(lang['fhint'][10])
             else:
                 id = config.id
             try:
                 dic = json.loads(
-                    self.isok(self.request(f'download/{id}',
-                                           requests.post))['data'])
-                if (com == '2'):
+                    self.isok(self.request(f'download/{id}', requests.post))['data']
+                )
+                if com == '2':
                     path = j(f'{id}.json')
                     with open(path, 'w') as f:
                         f.write(json.dumps(dic))
@@ -165,9 +168,9 @@ class Config:
 
     # Getter
     def getModeElement(self):
-        if (self.mode == mode[0]):
+        if self.mode == mode[0]:
             return 0, self.task, self.dealNormal, self.normalShow
-        if (self.mode == mode[1]):
+        if self.mode == mode[1]:
             return 1, self.history, self.dealHistory, self.historyShow
         return 2, self.hidden, self.dealHidden, self.hiddenShow
 
@@ -178,23 +181,23 @@ class Config:
 
     # 任务处理
     def dealNormal(self, task: Task, para: List[str]):
-        if ('d' not in para):
+        if 'd' not in para:
             self.history.append(History(task))
-            if (task.repeat):
+            if task.repeat:
                 task.count += 1
                 task.createTime = int(datetime.datetime.now().timestamp())
                 self.task.append(task)
-        if ('h' in para):
+        if 'h' in para:
             self.hidden.append(Hidden(task.name, task.color))
 
     def dealHistory(self, task: History, para: List[str]):
-        if ('r' in para):
+        if 'r' in para:
             self.history.append(task)
             task.task.createTime = int(datetime.datetime.now().timestamp())
             self.task.append(task.task)
 
     def dealHidden(self, task: Hidden, para: List[str]):
-        if ('d' not in para):
+        if 'd' not in para:
             self.task.append(Task(task.name, task.color, 'r' in para))
 
     # 任务展示
@@ -203,8 +206,13 @@ class Config:
             print(
                 colorChar(
                     lang['tformat'][0].format(
-                        idx + 1, i.name, '' if not i.repeat else
-                        lang['aformat'][0].format(i.count)), i.color))
+                        idx + 1,
+                        i.name,
+                        '' if not i.repeat else lang['aformat'][0].format(i.count),
+                    ),
+                    i.color,
+                )
+            )
 
     def historyShow(self, history: List[Tuple]):
         f = datetime.datetime.fromtimestamp
@@ -212,21 +220,26 @@ class Config:
             print(
                 colorChar(
                     lang['tformat'][1].format(
-                        idx + 1, f(i.doneTime),
+                        idx + 1,
+                        f(i.doneTime),
                         lang['aformat'][1].format(i.task.count)
-                        if i.task.repeat else '', i.task.name,
-                        diff(i.duringTime)), i.task.color))
+                        if i.task.repeat
+                        else '',
+                        i.task.name,
+                        diff(i.duringTime),
+                    ),
+                    i.task.color,
+                )
+            )
 
     def hiddenShow(self, hidden: List[Tuple]):
         for idx, i in hidden[-hiddenMax:]:
-            print(
-                colorChar(lang['tformat'][0].format(idx + 1, i.name, ''),
-                          i.color))
+            print(colorChar(lang['tformat'][0].format(idx + 1, i.name, ''), i.color))
 
     # 任务生成
     def generateTask(self, com: str, para: List[str]):
         color = int(next((i for i in para if i.isdigit()), '0'))
-        if ('h' in para):
+        if 'h' in para:
             self.hidden.append(Hidden(com, color))
         else:
             self.task.append(Task(com, color, 'r' in para))
@@ -256,34 +269,33 @@ def l2t(li: List):
 
 # 参变分离
 def sep(origin: str):
-    if (origin.find(' -') == -1):
+    if origin.find(' -') == -1:
         return origin, []
-    para = [
-        i for i in list(origin[origin.find(' -') + 2:])
-        if i != '-' and i != ' '
-    ]
-    return origin[:origin.find(' -')], para
+    para = [i for i in list(origin[origin.find(' -') + 2 :]) if i != '-' and i != ' ']
+    return origin[: origin.find(' -')], para
 
 
 # 彩色字符
 def colorChar(s: str, f: int):
+    if f == 0:
+        return s
     return '\033[3{}m{}\033[0m'.format(f, s)
 
 
 # 时间显示转换
 def diff(ds: int):
     f = False
-    st = ""
+    st = ''
     la = lang['time']
-    if (ds // (60 * 60 * 24) != 0):
+    if ds // (60 * 60 * 24) != 0:
         st += str(ds // (60 * 60 * 24)) + la[0]
         f = True
     ds %= 3600 * 24
-    if (ds // (60 * 60) != 0 or f):
+    if ds // (60 * 60) != 0 or f:
         st += str(ds // (60 * 60)) + la[1]
         f = True
     ds %= 60 * 24
-    if (ds // 60 != 0 or f):
+    if ds // 60 != 0 or f:
         st += str(ds // 60) + la[2]
         f = True
     st += str(ds % 60) + la[3]
@@ -292,14 +304,16 @@ def diff(ds: int):
 
 # json转对象
 def json2obj(j, o):
-    if (isinstance(j, list)):
+    if isinstance(j, list):
         return [json2obj(i, deepcopy(o)) for i in j]
     if not (isinstance(j, dict)):
         return j
     d = {
-        k: (json2obj(v,
-                     globals()[k.capitalize()]()) if isinstance(
-                         v, (dict, list)) else json2obj(v, object()))
+        k: (
+            json2obj(v, globals()[k.capitalize()]())
+            if isinstance(v, (dict, list))
+            else json2obj(v, object())
+        )
         for k, v in j.items()
     }
     o.__dict__.update(d)
@@ -319,13 +333,17 @@ def switchConfigration():
     fileList = [i for i in os.listdir(sys.path[0]) if i.endswith('.json')]
     for idx, i in enumerate(fileList):
         f = j(i) == configPath
-        print(lang['tformat'][0].format(idx + 1, i, '') +
-              colorChar(' <' if f else '', 1))
-    cmd = input(lang['chint'][4].format('/'.join(
-        str(i + 1) for i in range(len(fileList))) + '/q'))
-    if (cmd == 'q'):
+        print(
+            lang['tformat'][0].format(idx + 1, i, '') + colorChar(' <' if f else '', 1)
+        )
+    cmd = input(
+        lang['chint'][4].format(
+            '/'.join(str(i + 1) for i in range(len(fileList))) + '/q'
+        )
+    )
+    if cmd == 'q':
         return
-    if (not cmd.isdigit() or int(cmd) > len(fileList)):
+    if not cmd.isdigit() or int(cmd) > len(fileList):
         print(lang['err'][0])
     else:
         path = j(fileList[int(cmd) - 1])
@@ -345,7 +363,7 @@ def setDefault():
     global configPath
     with open(j(defaultConf), 'r') as f:
         id = json.loads(f.read())['id']
-    if (j(defaultConf) != configPath):
+    if j(defaultConf) != configPath:
         os.rename(j(defaultConf), j(f'{id}.json'))
         os.rename(configPath, j(defaultConf))
         configPath = j(defaultConf)
@@ -356,37 +374,37 @@ def setDefault():
 def untaskDeal(com: str):
     global config, lang
     clear()
-    if (com == resposive[1]):
+    if com == resposive[1]:
         sys.exit()
-    if (com == resposive[2]):
+    if com == resposive[2]:
         with open(helpPath, 'r') as f:
             print(f.read())
-    if (com == resposive[3]):
+    if com == resposive[3]:
         switchConfigration()
-    if (com == resposive[4]):
+    if com == resposive[4]:
         config.name = input(lang['chint'][6].format(config.name))
-    if (com == resposive[5]):
+    if com == resposive[5]:
         setDefault()
-    if (com in sync):
+    if com in sync:
         config.synchronizer.dealSync(com)
-    if (com not in (list(language.language.keys()) + mode) and com != ''):
+    if com not in (list(language.language.keys()) + mode) and com != '':
         enter()
-    if (com in language.language):
+    if com in language.language:
         config.lang, lang = com, language.language[com]
-    if (com in mode):
+    if com in mode:
         config.mode = com
 
 
 # 指令处理
 def deal(com: str, para: List[str], elements: List, f):
-    if ('f' not in para):
-        if (com in resposive):
+    if 'f' not in para:
+        if com in resposive:
             # 全局控制
             untaskDeal(com)
             elements = config.getModeElement()[1]
-        elif (com.isdigit()):
+        elif com.isdigit():
             # 任务完成和删除
-            if (int(com) > len(elements)):
+            if int(com) > len(elements):
                 print(colorChar(lang['err'][0], 1))
                 enter()
             else:
@@ -408,9 +426,9 @@ def display(s: str, elements: List):
     modeElement = config.getModeElement()
     print(lang['dname'][modeElement[0]] + f' ({config.name})')
     print(line)
-    if (modeElement[1] == []):
+    if modeElement[1] == []:
         print(lang['ehint'][modeElement[0]])
-    elif (elements == []):
+    elif elements == []:
         print(lang['ehint'][3].format(colorChar(s, 1)))
     else:
         modeElement[3](elements)
