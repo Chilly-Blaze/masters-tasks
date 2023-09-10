@@ -2,9 +2,11 @@
 
 一个基于终端的极简备忘录/任务管理器
 
+https://github.com/Chilly-Blaze/MastersTasks/assets/74091261/8358df85-2ab8-4da8-bd96-03b7a5d1ce55
+
 ## 快速开始
 
-假设只需要本地部署使用，则非常简单，下载项目中的MastersTasks.py，直接使用python3启动
+假设只需要本地部署使用，则非常简单，下载项目中的MastersTasks.py，直接使用python3启动，详细指令可看help.txt
 
 ## 远程部署
 
